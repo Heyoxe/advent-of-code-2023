@@ -5,6 +5,7 @@ on:
     # schedule:
     #     - cron: "51 */6 * * *" # Every 6 hours
     workflow_dispatch:
+    push:
 
 jobs:
     update-readme:
