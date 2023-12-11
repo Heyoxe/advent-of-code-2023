@@ -1,9 +1,44 @@
+use itertools::Itertools;
+use std::str::FromStr;
+
 advent_of_code::solution!(2);
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct Game {
     id: u32,
     sets: Vec<Set>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum ParseGameError {
+    InvalidFormat,
+    InvalidId(String),
+    InvalidSet(ParseSetError),
+}
+
+impl FromStr for Game {
+    type Err = ParseGameError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts = s.split_once(':').ok_or(ParseGameError::InvalidFormat)?;
+
+        let id = parts
+            .0
+            .split_once(' ')
+            .ok_or(ParseGameError::InvalidFormat)?
+            .1
+            .parse::<u32>()
+            .map_err(|_| ParseGameError::InvalidId(parts.0.to_string()))?;
+
+        let sets: Vec<Set> = parts
+            .1
+            .split(';')
+            .map(Set::from_str)
+            .try_collect()
+            .map_err(ParseGameError::InvalidSet)?;
+
+        Ok(Game { id, sets })
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -13,42 +48,93 @@ struct Set {
     blue: u32,
 }
 
-fn parse_cube(input: &str) -> (u32, &str) {
-    let mut parts = input.trim().split(' ');
-    let n = parts.next().expect("id always exists").parse().unwrap();
-    let color = parts.next().expect("color always exists");
-    (n, color)
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum ParseSetError {
+    CubeAlreadyDefined,
+    InvalidCube(ParseCubeError),
 }
 
-fn parse_set(input: &str) -> Set {
-    input
-        .split(',')
-        .map(parse_cube)
-        .fold(Set::default(), |mut acc, (n, color)| {
-            match color {
-                "red" => acc.red = n,
-                "green" => acc.green = n,
-                "blue" => acc.blue = n,
-                _ => unreachable!(),
-            }
+impl FromStr for Set {
+    type Err = ParseSetError;
 
-            acc
-        })
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.split(',')
+            .map(Cube::from_str)
+            .try_fold((None, None, None), |mut acc, cube| {
+                let cube = cube.map_err(ParseSetError::InvalidCube)?;
+                macro_rules! set_color {
+                    ($index:tt) => {
+                        acc.$index = Some(
+                            acc.$index
+                                .map_or(Ok(cube.n), |_| Err(ParseSetError::CubeAlreadyDefined))?,
+                        )
+                    };
+                }
+
+                match cube.color {
+                    CubeColor::Red => set_color!(0),
+                    CubeColor::Green => set_color!(1),
+                    CubeColor::Blue => set_color!(2),
+                }
+
+                Ok::<_, ParseSetError>(acc)
+            })
+            .map(|(red, green, blue)| Set {
+                red: red.unwrap_or(0),
+                green: green.unwrap_or(0),
+                blue: blue.unwrap_or(0),
+            })
+    }
 }
 
-fn parse_game(input: &str) -> Game {
-    let mut parts = input.split(':');
-    let id = parts
-        .next()
-        .expect("game hader always exists")
-        .split(' ')
-        .nth(1)
-        .expect("id always exists");
-    let sets = parts.next().expect("sets always exists");
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct Cube {
+    n: u32,
+    color: CubeColor,
+}
 
-    Game {
-        id: id.trim().parse().unwrap(),
-        sets: sets.split(';').map(parse_set).collect(),
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum ParseCubeError {
+    InvalidFormat,
+    InvalidNumber(String),
+    InvalidColor(String),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum CubeColor {
+    Red,
+    Green,
+    Blue,
+}
+
+impl FromStr for CubeColor {
+    type Err = ParseCubeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "red" => Ok(CubeColor::Red),
+            "green" => Ok(CubeColor::Green),
+            "blue" => Ok(CubeColor::Blue),
+            _ => Err(ParseCubeError::InvalidColor(s.to_string())),
+        }
+    }
+}
+
+impl FromStr for Cube {
+    type Err = ParseCubeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (n, color) = s
+            .trim()
+            .split_once(' ')
+            .ok_or(ParseCubeError::InvalidFormat)?;
+
+        let n = n
+            .parse::<u32>()
+            .map_err(|_| ParseCubeError::InvalidNumber(n.to_string()))?;
+        let color = color.parse::<CubeColor>()?;
+
+        Ok(Cube { n, color })
     }
 }
 
@@ -56,7 +142,7 @@ pub fn part_one(input: &str) -> Option<u32> {
     let v = input
         .lines()
         .filter_map(|ln| {
-            let game = parse_game(ln);
+            let game = ln.parse::<Game>().expect("all games are valid");
             let is_valid = game
                 .sets
                 .iter()
@@ -77,21 +163,11 @@ pub fn part_two(input: &str) -> Option<u32> {
     let v = input
         .lines()
         .filter_map(|ln| {
-            let game = parse_game(ln);
-            let biggest = game.sets.iter().fold(Set::default(), |mut acc, set| {
-                if set.red > acc.red {
-                    acc.red = set.red;
-                }
-
-                if set.green > acc.green {
-                    acc.green = set.green;
-                }
-
-                if set.blue > acc.blue {
-                    acc.blue = set.blue;
-                }
-
-                acc
+            let game = ln.parse::<Game>().expect("all games are valid");
+            let biggest = game.sets.iter().fold(Set::default(), |acc, set| Set {
+                red: acc.red.max(set.red),
+                green: acc.green.max(set.green),
+                blue: acc.blue.max(set.blue),
             });
 
             Some(biggest.red * biggest.green * biggest.blue)
@@ -108,14 +184,20 @@ mod tests {
     #[test]
     fn test_parse_cub() {
         let input = " 3 blue";
-        let result = parse_cube(input);
-        assert_eq!(result, (3, "blue"));
+        let result = input.parse::<Cube>().expect("cube is valid");
+        assert_eq!(
+            result,
+            Cube {
+                n: 3,
+                color: CubeColor::Blue
+            }
+        );
     }
 
     #[test]
     fn test_parse_set() {
         let input = " 3 blue, 4 red";
-        let result = parse_set(input);
+        let result = input.parse::<Set>().expect("set is valid");
         assert_eq!(
             result,
             Set {
@@ -129,7 +211,7 @@ mod tests {
     #[test]
     fn test_parse_game() {
         let input = "Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green";
-        let result = parse_game(input);
+        let result = input.parse::<Game>().expect("game is valid");
         assert_eq!(
             result,
             Game {
