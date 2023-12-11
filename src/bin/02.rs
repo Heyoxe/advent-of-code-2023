@@ -9,6 +9,7 @@ struct Game {
     sets: Vec<Set>,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum ParseGameError {
     InvalidFormat,
@@ -93,6 +94,7 @@ struct Cube {
     color: CubeColor,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum ParseCubeError {
     InvalidFormat,
@@ -162,7 +164,7 @@ pub fn part_one(input: &str) -> Option<u32> {
 pub fn part_two(input: &str) -> Option<u32> {
     let v = input
         .lines()
-        .filter_map(|ln| {
+        .map(|ln| {
             let game = ln.parse::<Game>().expect("all games are valid");
             let biggest = game.sets.iter().fold(Set::default(), |acc, set| Set {
                 red: acc.red.max(set.red),
@@ -170,7 +172,7 @@ pub fn part_two(input: &str) -> Option<u32> {
                 blue: acc.blue.max(set.blue),
             });
 
-            Some(biggest.red * biggest.green * biggest.blue)
+            biggest.red * biggest.green * biggest.blue
         })
         .sum();
 
