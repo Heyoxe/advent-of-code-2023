@@ -40,8 +40,6 @@ impl<'a, T> WindowIterator<'a, T> {
         let half_width = (width - 1) / 2;
         let half_height = (height - 1) / 2;
 
-        assert!((lines.len() - 1 + half_height) <= usize::MAX);
-
         Self {
             size: (half_width, half_height),
             data,
@@ -141,16 +139,14 @@ impl std::fmt::Display for Adjacency {
     }
 }
 
-type Matrix = Vec<Vec<Adjacency>>;
-
-pub fn part_one(input: &str) -> Option<u32> {
+fn build_adjacency_matrix(input: &str) -> Vec<Vec<Adjacency>> {
     let matrix = input
         .lines()
         .map(|ln| ln.chars().collect_vec())
         .collect_vec();
 
     // Check if an item is ajacent to a special character
-    let mut adjacency_matrix = WindowIterator::new(&matrix, (3, 3))
+    WindowIterator::new(&matrix, (3, 3))
         .map(|(v, (_, ln), _, window)| {
             let is_adjacent = window
                 .iter()
@@ -167,11 +163,14 @@ pub fn part_one(input: &str) -> Option<u32> {
         .group_by(|(_, ln)| *ln)
         .into_iter()
         .map(|(_, group)| group.map(|(a, _)| a).collect_vec())
-        .collect_vec();
+        .collect_vec()
+}
+
+pub fn part_one(input: &str) -> Option<u32> {
+    let adjacency_matrix = build_adjacency_matrix(input);
 
     // Collect numbers
     let mut parts = Vec::<u32>::new();
-
     for ln in adjacency_matrix {
         let iter = ln.iter();
         let mut data: (bool, u32) = (false, 0);
@@ -200,8 +199,96 @@ pub fn part_one(input: &str) -> Option<u32> {
     Some(parts.iter().sum())
 }
 
-pub fn part_two(_input: &str) -> Option<u32> {
-    None
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Parsed {
+    Number((u32, u32)),
+    Gear,
+}
+
+pub fn part_two(input: &str) -> Option<u32> {
+    let adjacency_matrix = build_adjacency_matrix(input);
+
+    // Collect numbers
+    let mut matrix = Vec::<Vec<Option<Parsed>>>::new();
+    let mut id = 0;
+    for ln in adjacency_matrix {
+        let mut line: Vec<Option<Parsed>> = vec![None; ln.len()];
+
+        let iter = ln.iter();
+
+        let mut has_encountered_adjacent = false;
+        let mut acc = 0;
+        let mut span = 0;
+        for (index, a) in iter.enumerate() {
+            let c = a.char();
+
+            if c.is_ascii_digit() {
+                let n = c.to_digit(10).expect("the digit should always be valid");
+                has_encountered_adjacent = has_encountered_adjacent || a.is_adjacent();
+                acc = acc * 10 + n;
+                span += 1;
+                continue;
+            }
+
+            if c == '*' {
+                line[index] = Some(Parsed::Gear);
+            }
+
+            if has_encountered_adjacent && acc != 0 {
+                #[allow(unused_must_use)]
+                for v in line.iter_mut().take(index).skip(index - span) {
+                    v.insert(Parsed::Number((id, acc)));
+                }
+                id += 1;
+            }
+
+            has_encountered_adjacent = false;
+            acc = 0;
+            span = 0;
+        }
+
+        if has_encountered_adjacent && acc != 0 {
+            let index = ln.len() - 1;
+            #[allow(unused_must_use)]
+            for v in line.iter_mut().take(index).skip(index + 1 - span) {
+                v.insert(Parsed::Number((id, acc)));
+            }
+            id += 1;
+        }
+
+        matrix.push(line)
+    }
+
+    let v = WindowIterator::new(&matrix, (3, 3))
+        .map(|(v, _, _, window)| match v {
+            Some(Parsed::Gear) => {
+                let numbers = window
+                    .into_iter()
+                    .flatten()
+                    .unique_by(|v| {
+                        if let Some(Parsed::Number((id, _))) = v {
+                            Some(*id)
+                        } else {
+                            None
+                        }
+                    })
+                    .filter_map(|v| match v {
+                        Some(Parsed::Number(n)) => Some(n.1),
+                        _ => None,
+                    })
+                    .collect_vec();
+
+                if numbers.len() > 1 {
+                    numbers.iter().product()
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        })
+        .sum();
+
+    Some(v)
 }
 
 #[cfg(test)]
@@ -217,6 +304,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(467835));
     }
 }
